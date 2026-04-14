@@ -1,0 +1,65 @@
+# Sample: count Python files under cwd (tree), optionally ask Copilot for one-line
+# summaries, then write artifacts/REPORT.md with paths and descriptions.
+#
+# Run from the directory that should be scanned (your repo root), with this package
+# layout available so `examples/scripts/build_python_report.py` resolves:
+#   ai-watcher run -w examples/python_inventory_workflow.yaml -f examples/prompt.md
+# (execute from the `ai_watcher/` project root), or set --cwd and fix `path:` below.
+#
+version: 1
+workflow:
+  name: python-inventory
+  steps:
+    - id: scan_python
+      type: command
+      shell: true
+      run: |
+        set -euo pipefail
+        mkdir -p artifacts
+        find . \( -path './.venv' -o -path './.git' \) -prune -o \
+          -type f -name '*.py' -print \
+          | sed 's|^\./||' \
+          | sort -u > artifacts/py_files.txt
+        wc -l < artifacts/py_files.txt | tr -d '[:space:]' > artifacts/py_count.txt
+
+    - id: mark_has_python
+      type: command
+      depends_on: [scan_python]
+      shell: true
+      run: |
+        set -euo pipefail
+        c=$(cat artifacts/py_count.txt)
+        if [ "$c" -gt 0 ]; then
+          touch "{{ cwd }}/artifacts/.has_python"
+        else
+          rm -f "{{ cwd }}/artifacts/.has_python"
+        fi
+
+    - id: copilot_summaries
+      type: copilot_sdk
+      depends_on: [mark_has_python]
+      only_if:
+        file_exists: "{{ cwd }}/artifacts/.has_python"
+      continue_on_error: true
+      # Default in schema is claude-haiku-4.5; override per step or use: ai-watcher ... -m claude-sonnet-4.5
+      model: claude-haiku-4.5
+      working_directory: "{{ cwd }}"
+      send_timeout_seconds: 600
+      prompt: |
+        You are documenting a Python codebase. Working directory: {{ cwd }}
+
+        1. Read the file `artifacts/py_files.txt` (relative to that directory). Each line is one repo-relative path to a `.py` file.
+        2. Open each file, understand what it does, and produce exactly ONE short plain-text description per file (no markdown in the cell).
+        3. Write the result to `artifacts/file_summaries.txt` using this format ONLY:
+           - One line per file.
+           - Each line: the path exactly as listed in `py_files.txt`, then a TAB character, then the one-line summary.
+           - Do not add headers, fences, or commentary inside that file.
+
+        If you cannot read a path, still output a line with a TAB and a note like "(unreadable)".
+
+    - id: final_report
+      type: script
+      depends_on: [copilot_summaries, scan_python]
+      path: "examples/scripts/build_python_report.py"
+      interpreter: [python3]
+      working_directory: "{{ cwd }}"

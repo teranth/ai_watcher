@@ -1,0 +1,21 @@
+# Sample workflow: prints cwd, then runs a bounded repeat block with two echo steps.
+version: 1
+workflow:
+  name: sample
+  steps:
+    - id: greet
+      type: command
+      run: ["echo", "ai_watcher cwd={{ cwd }}"]
+    - id: loop
+      type: repeat
+      depends_on: [greet]
+      max_iterations: 2
+      until: all_success
+      steps:
+        - id: a
+          type: command
+          run: ["echo", "loop-a"]
+        - id: b
+          type: command
+          depends_on: [a]
+          run: ["echo", "loop-b"]
