@@ -121,4 +121,4 @@ pytest
 
 ## License
 
-Add your license here.
+MIT
